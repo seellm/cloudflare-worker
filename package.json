@@ -1,0 +1,49 @@
+{
+  "name": "@seellm/cloudflare-worker",
+  "version": "0.1.1",
+  "description": "SeeLLM AI Traffic Monitor - Cloudflare Worker for site-wide AI detection. Ships TypeScript source consumed directly by wrangler.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": [
+    "src/",
+    "wrangler.toml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run typecheck"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "cloudflare",
+    "worker",
+    "ai",
+    "monitoring",
+    "analytics",
+    "seellm",
+    "ai-visibility",
+    "chatgpt",
+    "perplexity",
+    "claude",
+    "bot-detection"
+  ],
+  "author": "SeeLLM",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seellm/cloudflare-worker"
+  },
+  "homepage": "https://seellm.com",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "typescript": "^5.6.2",
+    "wrangler": "^4.54.0"
+  }
+}

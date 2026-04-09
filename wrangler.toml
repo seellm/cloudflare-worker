@@ -1,0 +1,44 @@
+# ============================================
+# SeeLLM AI Traffic Monitor - Cloudflare Worker
+# ============================================
+#
+# Quick Setup (3 steps):
+#
+# 1. Edit the settings below (YOUR_DOMAIN and adapter credentials)
+# 2. Run: npx wrangler deploy
+# 3. Done! View your AI traffic at https://seellm.com
+#
+# ============================================
+
+name = "seellm-ai-monitor"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# ============================================
+# ⚠️  CONFIGURE THESE SETTINGS
+# ============================================
+
+# Your domain (e.g., "example.com")
+# The worker will monitor all traffic to this domain
+routes = [
+  { pattern = "YOUR_DOMAIN.com/*", zone_name = "YOUR_DOMAIN.com" }
+]
+
+[vars]
+# Adapter credentials from the Site Monitor setup page
+SEELLM_ADAPTER_ID = "adapter_xxx"
+SEELLM_ADAPTER_SECRET = "<paste secret>"
+SEELLM_ORG_ID = "org_..."
+SEELLM_API_URL = "https://api.seellm.link"
+# Optional override if the worker handles multiple hostnames
+# SEELLM_SITE_DOMAIN = "docs.example.com"
+
+# ============================================
+# Optional Settings (usually no changes needed)
+# ============================================
+
+# For local development only - proxy to your dev server
+# ORIGIN_URL = "http://localhost:3000"
+
+[observability]
+enabled = true
