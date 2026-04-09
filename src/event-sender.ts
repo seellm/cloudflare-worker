@@ -42,7 +42,7 @@ let eventBatch: EventBatch = {
 const BATCH_SIZE = 50;
 const BATCH_TIMEOUT_MS = 5000; // 5 seconds
 const RUNTIME = 'cloudflare_worker';
-const ADAPTER_VERSION = '0.1.0';
+const ADAPTER_VERSION = '0.1.2';
 const POLICY_REFRESH_MS = 5 * 60 * 1000;
 
 let cachedPolicy: { data: SiteEventsPolicyResponse; fetchedAt: number } | null = null;
