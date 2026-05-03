@@ -17,7 +17,7 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - run: npx vitest run
 
   publish:
     needs: test
