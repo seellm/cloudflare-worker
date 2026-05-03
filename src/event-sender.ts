@@ -156,7 +156,7 @@ async function sendEvents(
   }
 }
 
-async function sendHeartbeat(
+export async function sendHeartbeat(
   config: EventSenderConfig,
   payload: { events_sent?: number; failures?: number; last_success_ts?: string }
 ) {

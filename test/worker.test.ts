@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { clamp } from '../src/index';
 import type { Env } from '../src/index';
+import { clearPatchCache } from '../src/patches';
 
 // Import the default export (the worker fetch handler)
 import worker from '../src/index';
@@ -46,6 +47,7 @@ describe('worker fetch handler', () => {
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    clearPatchCache();
   });
 
   afterEach(() => {
@@ -85,6 +87,37 @@ describe('worker fetch handler', () => {
 
       expect(body.adapter_id).toBe('adapter-123');
       expect(body.has_credentials).toBe(true);
+    });
+
+    it('schedules a heartbeat when HMAC credentials are configured', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+      const request = new Request('https://example.com/__seellm/health');
+      const env: Env = {
+        SEELLM_ADAPTER_ID: 'adapter-123',
+        SEELLM_ADAPTER_SECRET: 'secret-abc',
+        SEELLM_ORG_ID: 'org_123',
+        SEELLM_API_URL: 'https://api.example.com',
+      };
+      const ctx = createMockCtx();
+
+      const response = await worker.fetch(request, env, ctx);
+
+      expect(response.status).toBe(200);
+      expect(ctx.waitUntil).toHaveBeenCalledOnce();
+
+      await (ctx.waitUntil as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        'https://api.example.com/api/site-events/heartbeat',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'X-Seellm-Org-Id': 'org_123',
+            'X-Seellm-Adapter-Id': 'adapter-123',
+          }),
+        }),
+      );
     });
   });
 
@@ -146,6 +179,96 @@ describe('worker fetch handler', () => {
 
       expect(response).toBe(originResponse);
       expect(ctx.waitUntil).toHaveBeenCalled();
+    });
+
+    it('injects a matching active patch into HTML responses', async () => {
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+        if (url === 'https://api.example.com/api/patches/active') {
+          return new Response(JSON.stringify({
+            patches: [
+              {
+                id: 'patch_123',
+                url: 'https://example.com/pricing',
+                type: 'answer_first_block',
+                html: '<section class="seellm-answer-first-patch"><h2>Short answer</h2><p>Pricing starts with a clear answer.</p></section>',
+                updated_at: '2026-05-03T12:00:00.000Z',
+              },
+            ],
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        return new Response('<html><body><main><h1>Pricing</h1></main></body></html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': '56' },
+        });
+      });
+
+      const request = new Request('https://example.com/pricing?utm=ai');
+      const env: Env = {
+        SEELLM_ADAPTER_ID: 'adapter-123',
+        SEELLM_ADAPTER_SECRET: 'secret-abc',
+        SEELLM_ORG_ID: 'org-456',
+        SEELLM_API_URL: 'https://api.example.com',
+      };
+      const ctx = createMockCtx();
+
+      const response = await worker.fetch(request, env, ctx);
+      const html = await response.text();
+
+      expect(response.headers.get('Content-Length')).toBeNull();
+      expect(html).toContain('data-seellm-patch-id="patch_123"');
+      expect(html).toContain('Pricing starts with a clear answer.');
+      expect(html.indexOf('Pricing starts with a clear answer.')).toBeLessThan(html.indexOf('<h1>Pricing</h1>'));
+    });
+
+    it('does not fetch or inject patches for non-HTML responses', async () => {
+      const originResponse = new Response('png-bytes', {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      });
+      globalThis.fetch = vi.fn().mockResolvedValue(originResponse);
+
+      const request = new Request('https://example.com/logo.png');
+      const env: Env = {
+        SEELLM_ADAPTER_ID: 'adapter-123',
+        SEELLM_ADAPTER_SECRET: 'secret-abc',
+        SEELLM_ORG_ID: 'org-456',
+        SEELLM_API_URL: 'https://api.example.com',
+      };
+      const ctx = createMockCtx();
+
+      const response = await worker.fetch(request, env, ctx);
+
+      expect(response).toBe(originResponse);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves the original HTML when patch manifest fetch fails', async () => {
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+        if (url === 'https://api.example.com/api/patches/active') {
+          return new Response('temporary outage', { status: 503 });
+        }
+
+        return new Response('<html><body><h1>Original</h1></body></html>', {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        });
+      });
+
+      const request = new Request('https://example.com/pricing');
+      const env: Env = {
+        SEELLM_ADAPTER_ID: 'adapter-123',
+        SEELLM_ADAPTER_SECRET: 'secret-abc',
+        SEELLM_ORG_ID: 'org-456',
+        SEELLM_API_URL: 'https://api.example.com',
+      };
+      const ctx = createMockCtx();
+
+      const response = await worker.fetch(request, env, ctx);
+
+      expect(await response.text()).toBe('<html><body><h1>Original</h1></body></html>');
     });
   });
 

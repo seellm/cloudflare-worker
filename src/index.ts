@@ -10,7 +10,8 @@
  */
 
 import type { EventSenderConfig } from './event-sender';
-import { queueEvent, flushEvents, createSiteEvent, sendAdapterRequest } from './event-sender';
+import { queueEvent, flushEvents, createSiteEvent, sendAdapterRequest, sendHeartbeat } from './event-sender';
+import { applyVisibilityPatches } from './patches';
 
 export interface Env {
   SEELLM_API_KEY?: string;
@@ -43,6 +44,15 @@ export default {
 
     // Health check endpoint — returns JSON so we can verify the Worker is running
     if (url.pathname === '/__seellm/health') {
+      ctx.waitUntil(
+        sendHeartbeat(config, {
+          events_sent: 0,
+          failures: 0,
+          last_success_ts: new Date().toISOString(),
+        }).catch((error) => {
+          console.error('[SeeLLM] Health heartbeat failed', error);
+        })
+      );
       return new Response(JSON.stringify({
         ok: true,
         worker: 'seellm-site-monitor',
@@ -94,7 +104,7 @@ export default {
       })()
     );
 
-    return response;
+    return applyVisibilityPatches(request, response, config);
   },
 };
 
