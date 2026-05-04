@@ -248,7 +248,10 @@ describe('worker fetch handler', () => {
             '<html><head>',
             '<meta property="article:modified_time" content="2025-07-02">',
             '<script type="application/ld+json">{"@type":"Article","dateModified":"2025-07-02"}</script>',
-            '</head><body><article><div class="date">July 2, 2025</div><h1>Resume Trends</h1></article></body></html>',
+            '</head><body><article><div class="date">July 2, 2025</div><h1>Resume Trends</h1></article>',
+            '<script>self.__next_f.push([1,"{\\"property\\":\\"article:modified_time\\",\\"content\\":\\"2025-07-02\\"}"])</script>',
+            '<script>self.__next_f.push([1,"{\\"children\\":\\"July 2, 2025\\"}"])</script>',
+            '</body></html>',
           ].join(''),
           {
             status: 200,
@@ -273,8 +276,10 @@ describe('worker fetch handler', () => {
       expect(response.headers.get('X-Seellm-Patch-Applied')).toBe('patch_freshness');
       expect(html).toContain('data-seellm-patch-id="patch_freshness"');
       expect(html).toContain('property="article:modified_time" content="2026-05-04"');
+      expect(html).toContain('\\"property\\":\\"article:modified_time\\",\\"content\\":\\"2026-05-04\\"');
       expect(html).toContain('"dateModified":"2026-05-04"');
       expect(html).toContain('July 2, 2025 · Updated May 2026');
+      expect(html).not.toContain('\\"children\\":\\"July 2, 2025\\"');
       expect(html).not.toContain('<h2>Short answer</h2>');
     });
 

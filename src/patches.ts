@@ -148,10 +148,17 @@ function injectFreshnessPatch(html: string, patch: ActivePatch, marker: string):
       /("dateModified"\s*:\s*")([^"]*)(")/g,
       `$1${escapeJsonString(modifiedAt)}$3`,
     );
+    patched = patched.replace(
+      /(\\?"property\\?"\s*:\s*\\?"article:modified_time\\?"[\s\S]{0,200}?\\?"content\\?"\s*:\s*\\?")([^"\\]*)(\\?")/g,
+      `$1${escapeJsonString(modifiedAt)}$3`,
+    );
   }
 
-  if (displayLabel && !patched.includes(displayLabel)) {
-    const visibleDate = /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b/;
+  if (displayLabel) {
+    const visibleDate = new RegExp(
+      `\\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},\\s+\\d{4}\\b(?!\\s*·\\s*${escapeRegExp(displayLabel)})`,
+      'g',
+    );
     patched = patched.replace(visibleDate, (match) => `${match} · ${escapeHtml(displayLabel)}`);
   }
 
@@ -179,4 +186,8 @@ function escapeHtml(value: string): string {
 
 function escapeJsonString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
