@@ -4,8 +4,12 @@ import { sendAdapterRequest } from './event-sender';
 type ActivePatch = {
   id: string;
   url: string;
-  type: 'answer_first_block';
+  type: 'answer_first_block' | 'freshness_update';
   html: string;
+  payload?: {
+    modified_at?: string;
+    display_label?: string;
+  };
   updated_at: string;
 };
 
@@ -110,6 +114,10 @@ function injectPatchHtml(html: string, patch: ActivePatch): string {
   const marker = `data-seellm-patch-id="${escapeAttribute(patch.id)}"`;
   if (html.includes(marker)) return html;
 
+  if (patch.type === 'freshness_update') {
+    return injectFreshnessPatch(html, patch, marker);
+  }
+
   const block = [
     `<div ${marker} data-seellm-managed="true">`,
     patch.html,
@@ -125,10 +133,50 @@ function injectPatchHtml(html: string, patch: ActivePatch): string {
   return `${html.slice(0, insertAt)}\n${block}\n${html.slice(insertAt)}`;
 }
 
+function injectFreshnessPatch(html: string, patch: ActivePatch, marker: string): string {
+  const modifiedAt = patch.payload?.modified_at;
+  const displayLabel = patch.payload?.display_label || (modifiedAt ? `Updated ${modifiedAt}` : '');
+  if (!modifiedAt && !displayLabel) return html;
+
+  let patched = html;
+  if (modifiedAt) {
+    patched = patched.replace(
+      /(<meta\b[^>]*(?:property|name)=["']article:modified_time["'][^>]*\bcontent=["'])([^"']*)(["'][^>]*>)/i,
+      `$1${escapeAttribute(modifiedAt)}$3`,
+    );
+    patched = patched.replace(
+      /("dateModified"\s*:\s*")([^"]*)(")/g,
+      `$1${escapeJsonString(modifiedAt)}$3`,
+    );
+  }
+
+  if (displayLabel && !patched.includes(displayLabel)) {
+    const visibleDate = /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b/;
+    patched = patched.replace(visibleDate, (match) => `${match} · ${escapeHtml(displayLabel)}`);
+  }
+
+  const bodyOpen = patched.match(/<body\b[^>]*>/i);
+  const comment = `\n<!-- ${marker} data-seellm-managed="true" type="freshness_update" -->`;
+  if (!bodyOpen || typeof bodyOpen.index !== 'number') {
+    return `${comment}\n${patched}`;
+  }
+
+  const insertAt = bodyOpen.index + bodyOpen[0].length;
+  return `${patched.slice(0, insertAt)}${comment}${patched.slice(insertAt)}`;
+}
+
 function escapeAttribute(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function escapeHtml(value: string): string {
+  return escapeAttribute(value).replace(/'/g, '&#39;');
+}
+
+function escapeJsonString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }

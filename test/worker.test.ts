@@ -222,6 +222,62 @@ describe('worker fetch handler', () => {
       expect(html.indexOf('Pricing starts with a clear answer.')).toBeLessThan(html.indexOf('<h1>Pricing</h1>'));
     });
 
+    it('applies a freshness patch to article metadata and visible date', async () => {
+      globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+        if (url === 'https://api.example.com/api/patches/active') {
+          return new Response(JSON.stringify({
+            patches: [
+              {
+                id: 'patch_freshness',
+                url: 'https://example.com/blog/resume-trends',
+                type: 'freshness_update',
+                html: '<span class="seellm-freshness-update">Updated May 2026</span>',
+                payload: {
+                  modified_at: '2026-05-04',
+                  display_label: 'Updated May 2026',
+                },
+                updated_at: '2026-05-04T10:00:00.000Z',
+              },
+            ],
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(
+          [
+            '<html><head>',
+            '<meta property="article:modified_time" content="2025-07-02">',
+            '<script type="application/ld+json">{"@type":"Article","dateModified":"2025-07-02"}</script>',
+            '</head><body><article><div class="date">July 2, 2025</div><h1>Resume Trends</h1></article></body></html>',
+          ].join(''),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': '240' },
+          },
+        );
+      });
+
+      const request = new Request('https://example.com/blog/resume-trends');
+      const env: Env = {
+        SEELLM_ADAPTER_ID: 'adapter-123',
+        SEELLM_ADAPTER_SECRET: 'secret-abc',
+        SEELLM_ORG_ID: 'org-456',
+        SEELLM_API_URL: 'https://api.example.com',
+      };
+      const ctx = createMockCtx();
+
+      const response = await worker.fetch(request, env, ctx);
+      const html = await response.text();
+
+      expect(response.headers.get('Content-Length')).toBeNull();
+      expect(response.headers.get('X-Seellm-Patch-Applied')).toBe('patch_freshness');
+      expect(html).toContain('data-seellm-patch-id="patch_freshness"');
+      expect(html).toContain('property="article:modified_time" content="2026-05-04"');
+      expect(html).toContain('"dateModified":"2026-05-04"');
+      expect(html).toContain('July 2, 2025 · Updated May 2026');
+      expect(html).not.toContain('<h2>Short answer</h2>');
+    });
+
     it('does not fetch or inject patches for non-HTML responses', async () => {
       const originResponse = new Response('png-bytes', {
         status: 200,

@@ -1,6 +1,6 @@
 {
   "name": "@seellm/cloudflare-worker",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "SeeLLM AI Traffic Monitor - Cloudflare Worker for site-wide AI detection. Ships TypeScript source consumed directly by wrangler.",
   "main": "src/index.ts",
   "types": "src/index.ts",
