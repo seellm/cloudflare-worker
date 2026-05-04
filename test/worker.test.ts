@@ -69,6 +69,12 @@ describe('worker fetch handler', () => {
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
       expect(body.ok).toBe(true);
       expect(body.worker).toBe('seellm-site-monitor');
+      expect(body.worker_version).toBeDefined();
+      expect(body.patch_capabilities).toEqual(expect.arrayContaining([
+        'answer_first_block',
+        'freshness_update',
+        'next_payload_freshness_rewrite',
+      ]));
       expect(body.adapter_id).toBeNull();
       expect(body.has_credentials).toBe(false);
       expect(body.timestamp).toBeDefined();

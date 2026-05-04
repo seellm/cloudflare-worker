@@ -13,6 +13,14 @@ import type { EventSenderConfig } from './event-sender';
 import { queueEvent, flushEvents, createSiteEvent, sendAdapterRequest, sendHeartbeat } from './event-sender';
 import { applyVisibilityPatches } from './patches';
 
+const WORKER_VERSION = '0.1.7';
+const PATCH_CAPABILITIES = [
+  'answer_first_block',
+  'freshness_update',
+  'next_payload_freshness_rewrite',
+  'citation_fragment',
+];
+
 export interface Env {
   SEELLM_API_KEY?: string;
   SEELLM_ADAPTER_ID?: string;
@@ -56,6 +64,8 @@ export default {
       return new Response(JSON.stringify({
         ok: true,
         worker: 'seellm-site-monitor',
+        worker_version: WORKER_VERSION,
+        patch_capabilities: PATCH_CAPABILITIES,
         adapter_id: config.adapterId || null,
         has_credentials: Boolean(config.adapterId && config.adapterSecret),
         timestamp: new Date().toISOString(),
