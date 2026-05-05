@@ -30,6 +30,11 @@ export async function applyVisibilityPatches(
   response: Response,
   config: EventSenderConfig,
 ): Promise<Response> {
+  // Pass through cleanly (no debug headers) when patches aren't even
+  // applicable — non-GET, non-HTML, non-2xx, or no adapter creds. This
+  // keeps event-only deployments free of patch metadata they don't care
+  // about, and avoids decorating image/JSON responses with HTML-patch
+  // diagnostics.
   if (!canPatchRequest(request, response, config)) {
     return response;
   }
@@ -39,24 +44,34 @@ export async function applyVisibilityPatches(
     patches = await getActivePatches(config);
   } catch (error) {
     console.warn('[SeeLLM] Patch manifest unavailable, serving origin response', error);
-    return response;
+    return withDebugHeaders(response, { reason: 'manifest_error' });
   }
 
   const patch = patches.find((candidate) => patchMatchesRequest(candidate, request.url));
   if (!patch) {
-    return response;
+    return withDebugHeaders(response, {
+      reason: 'no_match',
+      patchesAvailable: patches.length,
+    });
   }
 
   try {
     const originalHtml = await response.text();
     const patchedHtml = injectPatchHtml(originalHtml, patch);
     if (patchedHtml === originalHtml) {
-      return new Response(originalHtml, response);
+      const passthrough = new Response(originalHtml, response);
+      return withDebugHeaders(passthrough, {
+        reason: 'inject_noop',
+        patchesAvailable: patches.length,
+        matchedPatchId: patch.id,
+      });
     }
 
     const headers = new Headers(response.headers);
     headers.delete('Content-Length');
     headers.set('X-Seellm-Patch-Applied', patch.id);
+    headers.set('X-Seellm-Patch-Type', patch.type);
+    headers.set('X-Seellm-Patches-Available', String(patches.length));
     return new Response(patchedHtml, {
       status: response.status,
       statusText: response.statusText,
@@ -64,8 +79,39 @@ export async function applyVisibilityPatches(
     });
   } catch (error) {
     console.warn('[SeeLLM] Patch injection failed, serving origin response', error);
-    return response;
+    return withDebugHeaders(response, {
+      reason: 'inject_error',
+      patchesAvailable: patches.length,
+      matchedPatchId: patch.id,
+    });
   }
+}
+
+// Adds diagnostic headers to a patchable response so a curl against the
+// live page reveals why a patch was or wasn't injected when one was
+// expected. Only called for GET HTML 2xx responses with adapter creds —
+// non-patchable responses pass through unchanged.
+function withDebugHeaders(
+  response: Response,
+  info: {
+    reason: string;
+    patchesAvailable?: number;
+    matchedPatchId?: string;
+  },
+): Response {
+  const headers = new Headers(response.headers);
+  headers.set('X-Seellm-Patch-Reason', info.reason);
+  if (typeof info.patchesAvailable === 'number') {
+    headers.set('X-Seellm-Patches-Available', String(info.patchesAvailable));
+  }
+  if (info.matchedPatchId) {
+    headers.set('X-Seellm-Patch-Matched', info.matchedPatchId);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 async function getActivePatches(config: EventSenderConfig): Promise<ActivePatch[]> {
