@@ -13,7 +13,7 @@ import type { EventSenderConfig } from './event-sender';
 import { queueEvent, flushEvents, createSiteEvent, sendAdapterRequest, sendHeartbeat } from './event-sender';
 import { applyVisibilityPatches } from './patches';
 
-const WORKER_VERSION = '0.1.8';
+const WORKER_VERSION = '0.1.9';
 const PATCH_CAPABILITIES = [
   'answer_first_block',
   'freshness_update',

@@ -47,8 +47,14 @@ export async function applyVisibilityPatches(
     return withDebugHeaders(response, { reason: 'manifest_error' });
   }
 
-  const patch = patches.find((candidate) => patchMatchesRequest(candidate, request.url));
-  if (!patch) {
+  // Apply every matching patch, not just the first. Multiple patches can
+  // legitimately target the same URL (e.g. a freshness patch updating the
+  // visible date plus an answer-first block adding a top-of-page summary)
+  // and they target different parts of the HTML, so they compose. Picking
+  // only `find()`'s first match meant the verifier reported mismatches when
+  // the URL had any other active patch ahead of the one being verified.
+  const matching = patches.filter((candidate) => patchMatchesRequest(candidate, request.url));
+  if (matching.length === 0) {
     return withDebugHeaders(response, {
       reason: 'no_match',
       patchesAvailable: patches.length,
@@ -57,20 +63,31 @@ export async function applyVisibilityPatches(
 
   try {
     const originalHtml = await response.text();
-    const patchedHtml = injectPatchHtml(originalHtml, patch);
-    if (patchedHtml === originalHtml) {
+    let patchedHtml = originalHtml;
+    const appliedIds: string[] = [];
+    const appliedTypes = new Set<string>();
+    for (const patch of matching) {
+      const next = injectPatchHtml(patchedHtml, patch);
+      if (next !== patchedHtml) {
+        patchedHtml = next;
+        appliedIds.push(patch.id);
+        appliedTypes.add(patch.type);
+      }
+    }
+
+    if (appliedIds.length === 0) {
       const passthrough = new Response(originalHtml, response);
       return withDebugHeaders(passthrough, {
         reason: 'inject_noop',
         patchesAvailable: patches.length,
-        matchedPatchId: patch.id,
+        matchedPatchId: matching.map((p) => p.id).join(','),
       });
     }
 
     const headers = new Headers(response.headers);
     headers.delete('Content-Length');
-    headers.set('X-Seellm-Patch-Applied', patch.id);
-    headers.set('X-Seellm-Patch-Type', patch.type);
+    headers.set('X-Seellm-Patch-Applied', appliedIds.join(','));
+    headers.set('X-Seellm-Patch-Type', [...appliedTypes].join(','));
     headers.set('X-Seellm-Patches-Available', String(patches.length));
     return new Response(patchedHtml, {
       status: response.status,
@@ -82,7 +99,7 @@ export async function applyVisibilityPatches(
     return withDebugHeaders(response, {
       reason: 'inject_error',
       patchesAvailable: patches.length,
-      matchedPatchId: patch.id,
+      matchedPatchId: matching.map((p) => p.id).join(','),
     });
   }
 }
