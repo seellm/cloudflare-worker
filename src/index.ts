@@ -13,7 +13,7 @@ import type { EventSenderConfig } from './event-sender';
 import { queueEvent, flushEvents, createSiteEvent, sendAdapterRequest, sendHeartbeat } from './event-sender';
 import { applyVisibilityPatches } from './patches';
 
-const WORKER_VERSION = '0.1.9';
+const WORKER_VERSION = '0.1.10';
 const PATCH_CAPABILITIES = [
   'answer_first_block',
   'freshness_update',
@@ -29,6 +29,9 @@ export interface Env {
   SEELLM_API_URL?: string;
   SEELLM_SITE_DOMAIN?: string;
   ORIGIN_URL?: string; // Origin server URL for local dev (e.g., http://localhost:3000)
+  // Set to '1' or 'true' to disable automatic citation-fragment.js injection
+  // into HTML responses. Default is enabled when adapter credentials are present.
+  SEELLM_DISABLE_CITATION_INJECT?: string;
 }
 
 export default {
@@ -114,9 +117,58 @@ export default {
       })()
     );
 
-    return applyVisibilityPatches(request, response, config);
+    const patched = await applyVisibilityPatches(request, response, config);
+    const citationInjectDisabled = isFlagEnabled(env.SEELLM_DISABLE_CITATION_INJECT);
+    return citationInjectDisabled
+      ? patched
+      : injectCitationFragmentScript(patched, config);
   },
 };
+
+function isFlagEnabled(value: string | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+/**
+ * Auto-inject the citation-fragment.js beacon into every HTML response
+ * served to a configured SeeLLM customer. The snippet detects text-fragment
+ * URLs (Chrome's `#:~:text=…`) that AI assistants generate when citing a
+ * page and beacons the rendered paragraph back via `/__seellm/citation-fragment`.
+ *
+ * Removes the Step-8 setup burden: any customer with adapter credentials
+ * gets citation capture for free, no script tag to paste.
+ *
+ * Uses Cloudflare's streaming HTMLRewriter so we don't buffer the body.
+ * The snippet itself is sessionStorage-deduped, so double-loading
+ * (manual install + auto-inject) is harmless.
+ */
+function injectCitationFragmentScript(
+  response: Response,
+  config: EventSenderConfig,
+): Response {
+  if (!config.adapterId || !config.adapterSecret) return response;
+  if (response.status < 200 || response.status >= 300) return response;
+  const contentType = response.headers.get('Content-Type') || '';
+  if (!contentType.toLowerCase().includes('text/html')) return response;
+  // HTMLRewriter is a Cloudflare-runtime global — undefined in Node/vitest
+  // test environments where the worker is unit-tested without miniflare.
+  // Skip the inject in that case; production Workers always have it.
+  if (typeof (globalThis as any).HTMLRewriter === 'undefined') return response;
+
+  const snippetUrl = `${config.apiUrl}/snippets/citation-fragment.js`;
+  return new HTMLRewriter()
+    .on('head', {
+      element(el) {
+        el.append(
+          `<script async src="${snippetUrl}" data-seellm-citation-auto="1"></script>`,
+          { html: true },
+        );
+      },
+    })
+    .transform(response);
+}
 
 export function clamp(value: unknown, max: number): string | undefined {
   if (typeof value !== 'string') return undefined;

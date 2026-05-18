@@ -186,14 +186,45 @@ function injectPatchHtml(html: string, patch: ActivePatch): string {
     patch.html,
     '</div>',
   ].join('\n');
+  const rescueScript = buildAnswerFirstPatchRescueScript(patch, block);
 
   const bodyOpen = html.match(/<body\b[^>]*>/i);
   if (!bodyOpen || typeof bodyOpen.index !== 'number') {
-    return `${block}\n${html}`;
+    return `${block}\n${rescueScript}\n${html}`;
   }
 
   const insertAt = bodyOpen.index + bodyOpen[0].length;
-  return `${html.slice(0, insertAt)}\n${block}\n${html.slice(insertAt)}`;
+  return `${html.slice(0, insertAt)}\n${block}\n${rescueScript}\n${html.slice(insertAt)}`;
+}
+
+function buildAnswerFirstPatchRescueScript(patch: ActivePatch, block: string): string {
+  const patchId = JSON.stringify(patch.id);
+  const blockHtml = JSON.stringify(block);
+  return [
+    `<script data-seellm-managed="true" data-seellm-patch-rescue="${escapeAttribute(patch.id)}">`,
+    '(function(){',
+    `var patchId=${patchId};`,
+    `var blockHtml=${blockHtml};`,
+    'var selector=\'[data-seellm-patch-id="\' + patchId.replace(/"/g, \'\\\\"\') + \'"]\';',
+    'function hasPatch(){return !!document.querySelector(selector);}',
+    'function mountPatch(){',
+    'if(hasPatch())return;',
+    'var target=document.querySelector("main")||document.body;',
+    'if(!target)return;',
+    'var template=document.createElement("template");',
+    'template.innerHTML=blockHtml.trim();',
+    'var node=template.content.firstElementChild;',
+    'if(!node)return;',
+    'target.insertAdjacentElement("afterbegin",node);',
+    '}',
+    'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",mountPatch,{once:true});}',
+    'mountPatch();',
+    'setTimeout(mountPatch,50);',
+    'setTimeout(mountPatch,250);',
+    'setTimeout(mountPatch,1000);',
+    '})();',
+    '</script>',
+  ].join('');
 }
 
 function injectFreshnessPatch(html: string, patch: ActivePatch, marker: string): string {

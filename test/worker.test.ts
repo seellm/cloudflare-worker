@@ -224,6 +224,9 @@ describe('worker fetch handler', () => {
 
       expect(response.headers.get('Content-Length')).toBeNull();
       expect(html).toContain('data-seellm-patch-id="patch_123"');
+      expect(html).toContain('data-seellm-patch-rescue="patch_123"');
+      expect(html).toContain('document.querySelector("main")||document.body');
+      expect(html).toContain('setTimeout(mountPatch,250)');
       expect(html).toContain('Pricing starts with a clear answer.');
       expect(html.indexOf('Pricing starts with a clear answer.')).toBeLessThan(html.indexOf('<h1>Pricing</h1>'));
     });
